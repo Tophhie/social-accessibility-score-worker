@@ -10,11 +10,11 @@ export default {
         throw new Error(`Failed to fetch repos: ${reposResponse.status}`);
       }
 
-      const repos: { did: string }[] = await reposResponse.json();
+      const repos = await reposResponse.json();
 
       // 2. For each repo, fetch accessibility score and store in KV
       await Promise.all(
-        repos.map(async (repo) => {
+        repos.repos.map(async (repo) => {
           const did = repo.did;
           const scoreResponse = await fetch(
             `https://api.tophhie.cloud/pds/accessibilityScore/${did}`
