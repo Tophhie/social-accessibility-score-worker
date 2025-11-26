@@ -31,6 +31,26 @@ export default {
       });
     }
 
+    if (url.pathname === '/accessibilityScore/pds') {
+      const score = await env.ACCESSIBILITY_KV.get('pdsAccessibilityScore');
+      if (!score) {
+        return new Response(JSON.stringify({ error: 'Score not found.' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' },
+        });        
+      }
+
+      let lastUpdated = await env.ACCESSIBILITY_KV.get('lastUpdated');
+      if (!lastUpdated) {
+        lastUpdated = "Unknown";
+      }
+
+      return new Response(JSON.stringify({ score: Number(score), lastUpdated }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     return new Response('Not Found.', { status: 404 });
   },
 
