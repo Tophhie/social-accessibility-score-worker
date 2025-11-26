@@ -1,6 +1,8 @@
 name = "social-accessibility-score"
 main = "src/index.ts"
 compatibility_date = "2025-11-26"
+workers_dev = false
+preview_urls = false
 
 [triggers]
 crons = ["0 0 * * *"] # Runs daily at midnight UTC
@@ -15,3 +17,7 @@ enabled = true
 head_sampling_rate = 1
 invocation_logs = true
 persist = true
+
+[[routes]]
+pattern = "https://tophhie.social/accessibilityScore*"
+zone_id = "4b9a88c9cddc4c79f040262a8367b783"
