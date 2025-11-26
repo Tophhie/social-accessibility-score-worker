@@ -15,25 +15,30 @@ export default {
       // 2. For each repo, fetch accessibility score and store in KV
       await Promise.all(
         apiObj.repos.map(async (repo) => {
-          const did = repo.did;
-          const scoreResponse = await fetch(
+            const did = repo.did;
+            const scoreResponse = await fetch(
             `https://api.tophhie.cloud/pds/accessibilityScore/${did}`
-          );
+            );
 
-          if (!scoreResponse.ok) {
+            if (!scoreResponse.ok) {
             console.error(`Failed to fetch score for DID ${did}: ${scoreResponse.status}`);
             return;
-          }
+            }
 
-          const scoreData: { score: number } = await scoreResponse.json();
+            const scoreData: { score: number } = await scoreResponse.json();
 
-          // 3. Store score in KV with DID as key
-          try {
+            // 3. Store score in KV with DID as key
+            try {
             await env.ACCESSIBILITY_KV.put(did, scoreData.score.toString())
-          } catch {
+            } catch {
             console.log(`Could not store accessibility score for ${did}.`)
-          }
-          console.log(`Stored score for ${did}: ${scoreData.score}`);
+            }
+            console.log(`Stored score for ${did}: ${scoreData.score}`);
+
+            const allScores = await Promise.all(apiObj.repos.map(repo => env.ACCESSIBILITY_KV.get(repo.did)));
+            const numericScores = allScores.map(s => Number(s)).filter(n => !isNaN(n));
+            const avgScore = numericScores.reduce((sum, n) => sum + n, 0) / numericScores.length;
+            await env.ACCESSIBILITY_KV.put("pdsAccessibilityScore", avgScore.toFixed(2));
         })
       );
 
