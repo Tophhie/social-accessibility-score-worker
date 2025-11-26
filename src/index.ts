@@ -1,5 +1,39 @@
 
 export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+
+    // Check if the path is score
+    if (url.pathname === '/accessibilityScore') {
+      const did = url.searchParams.get('$did');
+      if (!did) {
+        return new Response(JSON.stringify({ error: 'Missing DID parameter. ($did).'}), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Fetch score from KV
+      const score = await env.ACCESSIBILITY_KV.get(did);
+      if(!score) {
+        return new Response(JSON.stringify({ error: 'Score not found.'}), {
+          status: 400,
+          headers: {'Content-Type': 'application/json'},
+        });
+      }
+
+      return new Response(JSON.stringify({did, score: Number(score)}), {
+        status: 200,
+        headers: {'Content-Type': 'application/json'},
+      });
+    }
+
+
+    return new Response('Not Found.', { status: 404 });
+  }
+
+
+
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     try {
         // 1. Fetch all repos from the PDS
