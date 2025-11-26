@@ -54,17 +54,34 @@ export default {
     }
 
     if (url.pathname === '/accessibilityScore/all') {
+
       const listResult = await env.ACCESSIBILITY_KV.list();
-      const scores: Record<string, number | null> = {};
+      const individualScores: { did: string; score: number }[] = [];
+      let lastUpdated: string | null = null;
+      let pdsAccessibilityScore: number | null = null;
 
       await Promise.all(
         listResult.keys.map(async (key) => {
           const value = await env.ACCESSIBILITY_KV.get(key.name);
-          scores[key.name] = value ? Number(value) : null;
+          if (!value) return;
+
+          if (key.name === "lastUpdated") {
+            lastUpdated = value;
+          } else if (key.name === "pdsAccessibilityScore") {
+            pdsAccessibilityScore = Number(value);
+          } else {
+            individualScores.push({ did: key.name, score: Number(value) });
+          }
         })
       );
 
-      return new Response(JSON.stringify(scores), {
+      const response = {
+        individualScores,
+        lastUpdated,
+        pdsAccessibilityScore,
+      };
+
+      return new Response(JSON.stringify(response), {
         status: 200,
         headers: { ...corsHeaders, ...cacheHeaders, 'Content-Type': 'application/json' },
       });
