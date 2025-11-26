@@ -3,94 +3,65 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
-    // Check if the path is score
     if (url.pathname === '/accessibilityScore') {
-      const did = url.searchParams.get('$did');
+      const did = url.searchParams.get('did'); // ✅ remove $ from param name
       if (!did) {
-        return new Response(JSON.stringify({ error: 'Missing DID parameter. ($did).'}), {
+        return new Response(JSON.stringify({ error: 'Missing DID parameter.' }), {
           status: 400,
           headers: { 'Content-Type': 'application/json' },
         });
       }
 
-      // Fetch score from KV
       const score = await env.ACCESSIBILITY_KV.get(did);
-      if(!score) {
-        return new Response(JSON.stringify({ error: 'Score not found.'}), {
-          status: 400,
-          headers: {'Content-Type': 'application/json'},
+      if (!score) {
+        return new Response(JSON.stringify({ error: 'Score not found.' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' },
         });
       }
 
-      return new Response(JSON.stringify({did, score: Number(score)}), {
+      return new Response(JSON.stringify({ did, score: Number(score) }), {
         status: 200,
-        headers: {'Content-Type': 'application/json'},
+        headers: { 'Content-Type': 'application/json' },
       });
     }
 
-
     return new Response('Not Found.', { status: 404 });
-  }
-
-
+  },
 
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     try {
-        // 1. Fetch all repos from the PDS
-        const reposResponse = await fetch("https://api.tophhie.cloud/pds/repos", {
-        });
+      const reposResponse = await fetch("https://api.tophhie.cloud/pds/repos");
+      if (!reposResponse.ok) throw new Error(`Failed to fetch repos: ${reposResponse.status}`);
 
-        if (!reposResponse.ok) {
-        throw new Error(`Failed to fetch repos: ${reposResponse.status}`);
-        }
+      const apiObj = await reposResponse.json();
+      const repos = apiObj.repos || []; // ✅ ensure it's an array
 
-        const apiObj = await reposResponse.json();
+      await Promise.all(
+        repos.map(async (repo: { did: string }) => {
+          const scoreResponse = await fetch(`https://api.tophhie.cloud/pds/accessibilityScore/${repo.did}`);
+          if (!scoreResponse.ok) return console.error(`Failed for DID ${repo.did}`);
 
-      // 2. For each repo, fetch accessibility score and store in KV
-        await Promise.all(
-        apiObj.repos.map(async (repo) => {
-            const did = repo.did;
-            const scoreResponse = await fetch(
-            `https://api.tophhie.cloud/pds/accessibilityScore/${did}`
-            );
-
-            if (!scoreResponse.ok) {
-            console.error(`Failed to fetch score for DID ${did}: ${scoreResponse.status}`);
-            return;
-            }
-
-            const scoreData: { score: number } = await scoreResponse.json();
-
-            // 3. Store score in KV with DID as key
-            try {
-                await env.ACCESSIBILITY_KV.put(did, scoreData.score.toString())
-                console.log(`Stored score for ${did}: ${scoreData.score}`);
-            } catch {
-                console.log(`Could not store accessibility score for ${did}.`)
-            }
+          const scoreData: { score: number } = await scoreResponse.json();
+          await env.ACCESSIBILITY_KV.put(repo.did, scoreData.score.toString());
         })
-        );
+      );
 
-        const allScores = await Promise.all(apiObj.repos.map(repo => env.ACCESSIBILITY_KV.get(repo.did)));
-        const numericScores = allScores.map(s => Number(s)).filter(n => !isNaN(n));
-        const avgScore = numericScores.reduce((sum, n) => sum + n, 0) / numericScores.length;
-        try {
-            await env.ACCESSIBILITY_KV.put("pdsAccessibilityScore", avgScore.toFixed(2));
-            console.log(`Stored score for pdsAccessibilityScore: ${avgScore.toFixed(2)}`);
-        } catch {
-            console.log(`Could not store accessibility score for pdsAccessibilityScore.`)
-        }
+      const allScores = await Promise.all(repos.map(repo => env.ACCESSIBILITY_KV.get(repo.did)));
+      const numericScores = allScores.map(s => Number(s)).filter(n => !isNaN(n));
+      const avgScore = numericScores.reduce((sum, n) => sum + n, 0) / numericScores.length;
 
-        console.log("All scores updated successfully.");
-        await env.ACCESSIBILITY_KV.put("lastUpdated", new Date().toISOString());
+      await env.ACCESSIBILITY_KV.put("pdsAccessibilityScore", avgScore.toFixed(2));
+      await env.ACCESSIBILITY_KV.put("lastUpdated", new Date().toISOString());
+
+      console.log("All scores updated successfully.");
     } catch (err) {
       console.error("Error during scheduled task:", err);
     }
   },
 };
 
-// Types for environment bindings
 interface Env {
-    ACCESSIBILITY_KV: KVNamespace;
-    API_TOKEN: string;
+  ACCESSIBILITY_KV: KVNamespace;
+  API_TOKEN: string;
 }
