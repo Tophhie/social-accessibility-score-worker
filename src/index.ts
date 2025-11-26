@@ -10,11 +10,11 @@ export default {
         throw new Error(`Failed to fetch repos: ${reposResponse.status}`);
       }
 
-      const repos = await reposResponse.json();
+      const apiObj = await reposResponse.json();
 
       // 2. For each repo, fetch accessibility score and store in KV
       await Promise.all(
-        repos.repos.map(async (repo) => {
+        apiObj.repos.map(async (repo) => {
           const did = repo.did;
           const scoreResponse = await fetch(
             `https://api.tophhie.cloud/pds/accessibilityScore/${did}`
@@ -28,7 +28,11 @@ export default {
           const scoreData: { score: number } = await scoreResponse.json();
 
           // 3. Store score in KV with DID as key
-          await env.TOPHHIE_KV.put(did, scoreData.score.toString());
+          try {
+            await env.ACCESSIBILITY_KV.put(did, scoreData.score.toString())
+          } catch {
+            console.log(`Could not store accessibility score for ${did}.`)
+          }
           console.log(`Stored score for ${did}: ${scoreData.score}`);
         })
       );
@@ -42,6 +46,6 @@ export default {
 
 // Types for environment bindings
 interface Env {
-  TOPHHIE_KV: KVNamespace;
+  ACCESSIBILITY_KV: KVNamespace;
   API_TOKEN: string;
 }
