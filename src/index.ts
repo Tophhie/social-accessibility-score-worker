@@ -20,7 +20,12 @@ export default {
         });
       }
 
-      return new Response(JSON.stringify({ did, score: Number(score) }), {
+      let lastUpdated = await env.ACCESSIBILITY_KV.get('lastUpdated');
+      if (!lastUpdated) {
+        lastUpdated = "Unknown";
+      }
+
+      return new Response(JSON.stringify({ did, score: Number(score), lastUpdated }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
