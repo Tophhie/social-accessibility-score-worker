@@ -1,4 +1,9 @@
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+};
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -10,7 +15,7 @@ export default {
         if (!score) {
           return new Response(JSON.stringify({ error: 'Score not found.' }), {
             status: 404,
-            headers: { 'Content-Type': 'application/json' },
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });        
         }
 
@@ -21,7 +26,7 @@ export default {
 
         return new Response(JSON.stringify({ score: Number(score), lastUpdated }), {
           status: 200,
-          headers: { 'Content-Type': 'application/json' },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
@@ -29,7 +34,7 @@ export default {
       if (!score) {
         return new Response(JSON.stringify({ error: 'Score not found.' }), {
           status: 404,
-          headers: { 'Content-Type': 'application/json' },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
@@ -40,11 +45,11 @@ export default {
 
       return new Response(JSON.stringify({ did, score: Number(score), lastUpdated }), {
         status: 200,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    return new Response('Not Found.', { status: 404 });
+    return new Response('Not Found.', { status: 404, headers: corsHeaders });
   },
 
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
