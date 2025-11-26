@@ -23,6 +23,7 @@ It also provides an **HTTP API** for retrieving scores on demand, making it easy
 - **HTTP API Endpoints**
   - `GET /accessibilityScore` → Returns the overall score for the entire PDS.
   - `GET /accessibilityScore?did=<DID>` → Returns the score for a specific DID.
+  - `GET /accessibilityScore/all` → Returns all data, including; individual scores, last updated timestamp, and the PDS score.
   - Includes **CORS headers** for cross-origin requests.
   - Supports **cache headers** for performance.
 
