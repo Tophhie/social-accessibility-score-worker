@@ -1,0 +1,10 @@
+name = "social-accessibility-score"
+main = "src/index.ts"
+compatibility_date = "2025-11-26"
+
+[triggers]
+crons = ["0 0 * * *"] # Runs daily at midnight UTC
+
+[[kv_namespaces]]
+binding = "ACCESSIBILITY_KV"
+id = "001c3af6e27f46ab84c8eab9ad467673"
