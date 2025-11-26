@@ -54,19 +54,22 @@ export default {
     }
 
     if (url.pathname === '/accessibilityScore/all') {
-      const scores = await env.ACCESSIBILITY_KV.list()
-      if (!scores) {
-        return new Response(JSON.stringify({ error: 'Score not found.' }), {
-          status: 404,
-          headers: { ...corsHeaders, ...cacheHeaders, 'Content-Type': 'application/json' },
-        });        
-      }
+      const listResult = await env.ACCESSIBILITY_KV.list();
+      const scores: Record<string, number | null> = {};
+
+      await Promise.all(
+        listResult.keys.map(async (key) => {
+          const value = await env.ACCESSIBILITY_KV.get(key.name);
+          scores[key.name] = value ? Number(value) : null;
+        })
+      );
+
       return new Response(JSON.stringify(scores), {
         status: 200,
         headers: { ...corsHeaders, ...cacheHeaders, 'Content-Type': 'application/json' },
       });
     }
-
+    
     return new Response('Not Found.', { status: 404, headers: { ...corsHeaders, ...cacheHeaders } });
   },
 
