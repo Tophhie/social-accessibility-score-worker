@@ -2,15 +2,15 @@
 export default {
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     try {
-      // 1. Fetch all repos from the PDS
-      const reposResponse = await fetch("https://api.tophhie.cloud/pds/repos", {
-      });
+        // 1. Fetch all repos from the PDS
+        const reposResponse = await fetch("https://api.tophhie.cloud/pds/repos", {
+        });
 
-      if (!reposResponse.ok) {
+        if (!reposResponse.ok) {
         throw new Error(`Failed to fetch repos: ${reposResponse.status}`);
-      }
+        }
 
-      const apiObj = await reposResponse.json();
+        const apiObj = await reposResponse.json();
 
       // 2. For each repo, fetch accessibility score and store in KV
         await Promise.all(
@@ -47,7 +47,8 @@ export default {
             console.log(`Could not store accessibility score for pdsAccessibilityScore.`)
         }
 
-      console.log("All scores updated successfully.");
+        console.log("All scores updated successfully.");
+        await env.ACCESSIBILITY_KV.put("lastUpdated", new Date().toISOString());
     } catch (err) {
       console.error("Error during scheduled task:", err);
     }
