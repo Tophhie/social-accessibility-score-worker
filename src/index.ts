@@ -13,7 +13,7 @@ export default {
       const apiObj = await reposResponse.json();
 
       // 2. For each repo, fetch accessibility score and store in KV
-      await Promise.all(
+        await Promise.all(
         apiObj.repos.map(async (repo) => {
             const did = repo.did;
             const scoreResponse = await fetch(
@@ -29,18 +29,23 @@ export default {
 
             // 3. Store score in KV with DID as key
             try {
-            await env.ACCESSIBILITY_KV.put(did, scoreData.score.toString())
+                await env.ACCESSIBILITY_KV.put(did, scoreData.score.toString())
+                console.log(`Stored score for ${did}: ${scoreData.score}`);
             } catch {
-            console.log(`Could not store accessibility score for ${did}.`)
+                console.log(`Could not store accessibility score for ${did}.`)
             }
-            console.log(`Stored score for ${did}: ${scoreData.score}`);
-
-            const allScores = await Promise.all(apiObj.repos.map(repo => env.ACCESSIBILITY_KV.get(repo.did)));
-            const numericScores = allScores.map(s => Number(s)).filter(n => !isNaN(n));
-            const avgScore = numericScores.reduce((sum, n) => sum + n, 0) / numericScores.length;
-            await env.ACCESSIBILITY_KV.put("pdsAccessibilityScore", avgScore.toFixed(2));
         })
-      );
+        );
+
+        const allScores = await Promise.all(apiObj.repos.map(repo => env.ACCESSIBILITY_KV.get(repo.did)));
+        const numericScores = allScores.map(s => Number(s)).filter(n => !isNaN(n));
+        const avgScore = numericScores.reduce((sum, n) => sum + n, 0) / numericScores.length;
+        try {
+            await env.ACCESSIBILITY_KV.put("pdsAccessibilityScore", avgScore.toFixed(2));
+            console.log(`Stored score for pdsAccessibilityScore: ${avgScore.toFixed(2)}`);
+        } catch {
+            console.log(`Could not store accessibility score for pdsAccessibilityScore.`)
+        }
 
       console.log("All scores updated successfully.");
     } catch (err) {
@@ -51,6 +56,6 @@ export default {
 
 // Types for environment bindings
 interface Env {
-  ACCESSIBILITY_KV: KVNamespace;
-  API_TOKEN: string;
+    ACCESSIBILITY_KV: KVNamespace;
+    API_TOKEN: string;
 }
