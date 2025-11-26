@@ -6,8 +6,21 @@ export default {
     if (url.pathname === '/accessibilityScore') {
       const did = url.searchParams.get('did'); // ✅ remove $ from param name
       if (!did) {
-        return new Response(JSON.stringify({ error: 'Missing DID parameter.' }), {
-          status: 400,
+        const score = await env.ACCESSIBILITY_KV.get('pdsAccessibilityScore');
+        if (!score) {
+          return new Response(JSON.stringify({ error: 'Score not found.' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
+          });        
+        }
+
+        let lastUpdated = await env.ACCESSIBILITY_KV.get('lastUpdated');
+        if (!lastUpdated) {
+          lastUpdated = "Unknown";
+        }
+
+        return new Response(JSON.stringify({ score: Number(score), lastUpdated }), {
+          status: 200,
           headers: { 'Content-Type': 'application/json' },
         });
       }
@@ -26,26 +39,6 @@ export default {
       }
 
       return new Response(JSON.stringify({ did, score: Number(score), lastUpdated }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    if (url.pathname === '/accessibilityScore/pds') {
-      const score = await env.ACCESSIBILITY_KV.get('pdsAccessibilityScore');
-      if (!score) {
-        return new Response(JSON.stringify({ error: 'Score not found.' }), {
-          status: 404,
-          headers: { 'Content-Type': 'application/json' },
-        });        
-      }
-
-      let lastUpdated = await env.ACCESSIBILITY_KV.get('lastUpdated');
-      if (!lastUpdated) {
-        lastUpdated = "Unknown";
-      }
-
-      return new Response(JSON.stringify({ score: Number(score), lastUpdated }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
