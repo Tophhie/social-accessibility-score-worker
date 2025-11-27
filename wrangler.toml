@@ -21,3 +21,6 @@ persist = true
 [[routes]]
 pattern = "https://tophhie.social/accessibilityScore*"
 zone_id = "4b9a88c9cddc4c79f040262a8367b783"
+
+[placement]
+mode = "smart"
