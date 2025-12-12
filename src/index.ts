@@ -115,6 +115,8 @@ export default {
       await env.ACCESSIBILITY_KV.put("pdsAccessibilityScore", avgScore.toFixed(2));
       await env.ACCESSIBILITY_KV.put("lastUpdated", new Date().toISOString());
 
+      await notifyDiscord(env, `✅ Accessibility scores updated. New PDS Accessibility Score: ${avgScore.toFixed(2)}.`);
+
       console.log("All scores updated successfully.");
     } catch (err) {
       console.error("Error during scheduled task:", err);
@@ -122,7 +124,21 @@ export default {
   },
 };
 
+export async function notifyDiscord(env: Env, content: string) {
+  const url = env.DISCORD_WEBHOOK_URL;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content })
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Discord webhook failed: ${res.status} ${res.statusText} – ${body}`);
+  }
+}
+
 interface Env {
   ACCESSIBILITY_KV: KVNamespace;
   API_TOKEN: string;
+  DISCORD_WEBHOOK_URL: string;
 }
