@@ -100,6 +100,11 @@ export default {
 
       await Promise.all(
         repos.map(async (repo: { did: string }) => {
+          const participates = await validateParticipation(env, repo.did);
+          if (!participates) {
+            console.log(`Skipping DID ${repo.did} due to user preference.`);
+            return;
+          }
           const scoreResponse = await fetch(`https://api.tophhie.cloud/pds/accessibilityScore/${repo.did}`);
           if (!scoreResponse.ok) return console.error(`Failed for DID ${repo.did}`);
 
@@ -135,6 +140,22 @@ export async function notifyDiscord(env: Env, content: string) {
     const body = await res.text();
     throw new Error(`Discord webhook failed: ${res.status} ${res.statusText} – ${body}`);
   }
+}
+
+export async function validateParticipation(env: Env, did: string): Promise<boolean> {
+  const recordResponse = await fetch(`https://tophhie.social/xrpc/com.atproto.repo.getRecord?repo=${did}&collection=social.tophhie.profile&rkey=self`)
+  if (!recordResponse.ok) {
+    console.error(`Failed to fetch profile for DID ${did}: ${recordResponse.status}`);
+    return true;
+  }
+
+  const recordData = await recordResponse.json();
+  const profile = recordData.value || {};
+  const preference = profile.pdsPreferences?.accessibilityScoring;
+  if (preference === undefined) {
+    return true;
+  }
+  return preference === true;
 }
 
 interface Env {
