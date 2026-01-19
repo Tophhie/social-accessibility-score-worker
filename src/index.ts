@@ -110,6 +110,7 @@ export default {
 
           const scoreData: { score: number } = await scoreResponse.json();
           await env.ACCESSIBILITY_KV.put(repo.did, scoreData.score.toString());
+          console.log(`Updated score for DID ${repo.did}: ${scoreData.score}`);
         })
       );
 
