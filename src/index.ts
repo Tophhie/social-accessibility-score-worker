@@ -145,7 +145,16 @@ export async function notifyDiscord(env: Env, content: string) {
 export async function validateParticipation(env: Env, did: string): Promise<boolean> {
   const recordResponse = await fetch(`https://tophhie.social/xrpc/com.atproto.repo.getRecord?repo=${did}&collection=social.tophhie.profile&rkey=self`)
   if (!recordResponse.ok) {
-    console.error(`Failed to fetch profile for DID ${did}: ${recordResponse.status}`);
+    try {
+      const errorData = await recordResponse.json();
+      if (errorData.error === 'RecordNotFound') {
+        console.warn(`Profile record for DID ${did} does not exist. Assuming participation...`);
+        return true;
+      }
+    } catch {
+      // Ignore JSON parsing errors
+    }
+    console.warn(`Failed to fetch profile for DID ${did}: ${recordResponse.status}`);
     return true;
   }
 
