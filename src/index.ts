@@ -99,7 +99,12 @@ export default {
       const repos = apiObj.repos || []; // ✅ ensure it's an array
 
       await Promise.all(
-        repos.map(async (repo: { did: string }) => {
+        repos.map(async (repo: { did: string, active: boolean }) => {
+          if (!repo.active) {
+            console.log(`Skipping DID ${repo.did} as it is marked inactive.`);
+            return;
+          }
+
           const participates = await validateParticipation(env, repo.did);
           if (!participates) {
             console.log(`Skipping DID ${repo.did} due to user preference.`);
