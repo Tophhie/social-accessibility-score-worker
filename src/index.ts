@@ -139,6 +139,7 @@ export default {
           );
           if (!scoreResponse.ok) {
             console.error(`Failed for DID ${repo.did}`);
+            scoreResponse.body?.cancel();
             return;
           }
 
