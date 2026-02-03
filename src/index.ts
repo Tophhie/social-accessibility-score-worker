@@ -1,59 +1,82 @@
-
+// ---- CORS & Cache headers ----
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
 };
+const cacheHeaders = { "Cache-Control": "public, max-age=3600" };
 
-const cacheHeaders = {
-  'Cache-Control': 'public, max-age=3600',
-};
+// ---- Concurrency control (network only) ----
+const MAX_CONCURRENCY = 6; // Cloudflare allows 6 simultaneous outgoing connections per invocation
+
+class Semaphore {
+  private queue: Array<() => void> = [];
+  private active = 0;
+  constructor(private readonly limit: number) {}
+  async run<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.active >= this.limit) {
+      await new Promise<void>((res) => this.queue.push(res));
+    }
+    this.active++;
+    try {
+      return await fn();
+    } finally {
+      this.active--;
+      this.queue.shift()?.();
+    }
+  }
+}
+
+function makeLimitedFetch(limit: Semaphore) {
+  return async function limitedFetch(input: RequestInfo, init?: RequestInit) {
+    return limit.run(() => fetch(input, init));
+  };
+}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
-    if (url.pathname === '/accessibilityScore') {
-      const did = url.searchParams.get('did'); // ✅ remove $ from param name
+    if (url.pathname === "/accessibilityScore") {
+      const did = url.searchParams.get("did");
+      const headers = { ...corsHeaders, ...cacheHeaders, "Content-Type": "application/json" };
+
       if (!did) {
-        const score = await env.ACCESSIBILITY_KV.get('pdsAccessibilityScore');
+        const score = await env.ACCESSIBILITY_KV.get("pdsAccessibilityScore");
         if (!score) {
-          return new Response(JSON.stringify({ error: 'Score not found.' }), {
+          return new Response(JSON.stringify({ error: "Score not found." }), {
             status: 404,
-            headers: { ...corsHeaders, ...cacheHeaders, 'Content-Type': 'application/json' },
-          });        
+            headers,
+          });
         }
 
-        let lastUpdated = await env.ACCESSIBILITY_KV.get('lastUpdated');
-        if (!lastUpdated) {
-          lastUpdated = "Unknown";
-        }
+        let lastUpdated = await env.ACCESSIBILITY_KV.get("lastUpdated");
+        if (!lastUpdated) lastUpdated = "Unknown";
 
         return new Response(JSON.stringify({ score: Number(score), lastUpdated }), {
           status: 200,
-          headers: { ...corsHeaders, ...cacheHeaders, 'Content-Type': 'application/json' },
+          headers,
         });
       }
 
       const score = await env.ACCESSIBILITY_KV.get(did);
       if (!score) {
-        return new Response(JSON.stringify({ error: 'Score not found.' }), {
+        return new Response(JSON.stringify({ error: "Score not found." }), {
           status: 404,
-          headers: { ...corsHeaders, ...cacheHeaders, 'Content-Type': 'application/json' },
+          headers,
         });
       }
 
-      let lastUpdated = await env.ACCESSIBILITY_KV.get('lastUpdated');
-      if (!lastUpdated) {
-        lastUpdated = "Unknown";
-      }
+      let lastUpdated = await env.ACCESSIBILITY_KV.get("lastUpdated");
+      if (!lastUpdated) lastUpdated = "Unknown";
 
       return new Response(JSON.stringify({ did, score: Number(score), lastUpdated }), {
         status: 200,
-        headers: { ...corsHeaders, ...cacheHeaders, 'Content-Type': 'application/json' },
+        headers,
       });
     }
 
-    if (url.pathname === '/accessibilityScore/all') {
+    if (url.pathname === "/accessibilityScore/all") {
+      const headers = { ...corsHeaders, ...cacheHeaders, "Content-Type": "application/json" };
 
       const listResult = await env.ACCESSIBILITY_KV.list();
       const individualScores: { did: string; score: number }[] = [];
@@ -75,58 +98,78 @@ export default {
         })
       );
 
-      const response = {
-        individualScores,
-        lastUpdated,
-        pdsAccessibilityScore,
-      };
-
-      return new Response(JSON.stringify(response), {
-        status: 200,
-        headers: { ...corsHeaders, ...cacheHeaders, 'Content-Type': 'application/json' },
-      });
+      const response = { individualScores, lastUpdated, pdsAccessibilityScore };
+      return new Response(JSON.stringify(response), { status: 200, headers });
     }
-    
-    return new Response('Not Found.', { status: 404, headers: { ...corsHeaders, ...cacheHeaders } });
+
+    return new Response("Not Found.", { status: 404, headers: { ...corsHeaders, ...cacheHeaders } });
   },
 
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     try {
-      const reposResponse = await fetch("https://api.tophhie.cloud/pds/repos");
+      // Gate all external fetches behind a 6-connection semaphore
+      const sem = new Semaphore(MAX_CONCURRENCY);
+      const limitedFetch = makeLimitedFetch(sem);
+
+      // 1) Repos list (external)
+      const reposResponse = await limitedFetch("https://api.tophhie.cloud/pds/repos");
       if (!reposResponse.ok) throw new Error(`Failed to fetch repos: ${reposResponse.status}`);
 
       const apiObj = await reposResponse.json();
-      const repos = apiObj.repos || []; // ✅ ensure it's an array
+      const repos = (apiObj.repos || []) as Array<{ did: string; active: boolean }>;
 
+      // 2) Process all repos with controlled concurrency
       await Promise.all(
-        repos.map(async (repo: { did: string, active: boolean }) => {
+        repos.map(async (repo) => {
           if (!repo.active) {
             console.log(`Skipping DID ${repo.did} as it is marked inactive.`);
             return;
           }
 
-          const participates = await validateParticipation(env, repo.did);
+          // External call (limited)
+          const participates = await validateParticipationWithLimit(env, repo.did, limitedFetch);
           if (!participates) {
             console.log(`Skipping DID ${repo.did} due to user preference.`);
             return;
           }
-          const scoreResponse = await fetch(`https://api.tophhie.cloud/pds/accessibilityScore/${repo.did}`);
-          if (!scoreResponse.ok) return console.error(`Failed for DID ${repo.did}`);
+
+          // External call (limited)
+          const scoreResponse = await limitedFetch(
+            `https://api.tophhie.cloud/pds/accessibilityScore/${repo.did}`
+          );
+          if (!scoreResponse.ok) {
+            console.error(`Failed for DID ${repo.did}`);
+            return;
+          }
 
           const scoreData: { score: number } = await scoreResponse.json();
-          await env.ACCESSIBILITY_KV.put(repo.did, scoreData.score.toString());
+          await env.ACCESSIBILITY_KV.put(repo.did, scoreData.score.toString()); // KV write (not a network subrequest)
           console.log(`Updated score for DID ${repo.did}: ${scoreData.score}`);
         })
       );
 
-      const allScores = await Promise.all(repos.map(repo => env.ACCESSIBILITY_KV.get(repo.did)));
-      const numericScores = allScores.map(s => Number(s)).filter(n => !isNaN(n));
-      const avgScore = numericScores.reduce((sum, n) => sum + n, 0) / numericScores.length;
+      // 3) Compute average from KV reads (or from in-memory if you prefer to store during loop)
+      const allScores = await Promise.all(repos.map((repo) => env.ACCESSIBILITY_KV.get(repo.did)));
+      const numericScores = allScores.map((s) => Number(s)).filter((n) => !isNaN(n));
+      const avgScore =
+        numericScores.length === 0
+          ? NaN
+          : numericScores.reduce((sum, n) => sum + n, 0) / numericScores.length;
 
-      await env.ACCESSIBILITY_KV.put("pdsAccessibilityScore", avgScore.toFixed(2));
+      if (!Number.isNaN(avgScore)) {
+        await env.ACCESSIBILITY_KV.put("pdsAccessibilityScore", avgScore.toFixed(2));
+      }
       await env.ACCESSIBILITY_KV.put("lastUpdated", new Date().toISOString());
 
-      await notifyDiscord(env, `✅ Accessibility scores updated. New PDS Accessibility Score: ${avgScore.toFixed(2)}.`);
+      // 4) Discord webhook (external) — fire and forget
+      ctx.waitUntil(
+        notifyDiscord(
+          env,
+          Number.isNaN(avgScore)
+            ? `✅ Accessibility scores updated for ${repos.length} repos.`
+            : `✅ Accessibility scores updated. New PDS Accessibility Score: ${avgScore.toFixed(2)}.`
+        )
+      );
 
       console.log("All scores updated successfully.");
     } catch (err) {
@@ -135,25 +178,19 @@ export default {
   },
 };
 
-export async function notifyDiscord(env: Env, content: string) {
-  const url = env.DISCORD_WEBHOOK_URL;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content })
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Discord webhook failed: ${res.status} ${res.statusText} – ${body}`);
-  }
-}
+async function validateParticipationWithLimit(
+  env: Env,
+  did: string,
+  limitedFetch: (input: RequestInfo, init?: RequestInit) => Promise<Response>
+): Promise<boolean> {
+  const recordResponse = await limitedFetch(
+    `https://tophhie.social/xrpc/com.atproto.repo.getRecord?repo=${did}&collection=social.tophhie.profile&rkey=self`
+  );
 
-export async function validateParticipation(env: Env, did: string): Promise<boolean> {
-  const recordResponse = await fetch(`https://tophhie.social/xrpc/com.atproto.repo.getRecord?repo=${did}&collection=social.tophhie.profile&rkey=self`)
   if (!recordResponse.ok) {
     try {
       const errorData = await recordResponse.json();
-      if (errorData.error === 'RecordNotFound') {
+      if (errorData?.error === "RecordNotFound") {
         console.warn(`Profile record for DID ${did} does not exist. Assuming participation...`);
         return true;
       }
@@ -161,16 +198,27 @@ export async function validateParticipation(env: Env, did: string): Promise<bool
       // Ignore JSON parsing errors
     }
     console.warn(`Failed to fetch profile for DID ${did}: ${recordResponse.status}`);
-    return true;
+    return true; // lenient default
   }
 
   const recordData = await recordResponse.json();
   const profile = recordData.value || {};
   const preference = profile.pdsPreferences?.accessibilityScoring;
-  if (preference === undefined) {
-    return true;
-  }
+  if (preference === undefined) return true;
   return preference === true;
+}
+
+export async function notifyDiscord(env: Env, content: string) {
+  const url = env.DISCORD_WEBHOOK_URL;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Discord webhook failed: ${res.status} ${res.statusText} – ${body}`);
+  }
 }
 
 interface Env {
